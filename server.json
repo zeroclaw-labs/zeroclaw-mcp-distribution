@@ -6,12 +6,12 @@
     "url": "https://github.com/zeroclaw-labs/zeroclaw-mcp-distribution",
     "source": "github"
   },
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@zeroclaw-labs/zeroclaw-mcp",
-      "version": "0.1.0-alpha.3",
+      "version": "0.1.0-alpha.4",
       "transport": {
         "type": "stdio"
       }

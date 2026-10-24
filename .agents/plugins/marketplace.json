@@ -17,7 +17,7 @@
       "source": {
         "package": "@zeroclaw-labs/zeroclaw-mcp",
         "source": "npm",
-        "version": "0.1.0-alpha.3"
+        "version": "0.1.0-alpha.4"
       }
     }
   ]
