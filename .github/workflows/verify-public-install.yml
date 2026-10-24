@@ -1,0 +1,58 @@
+name: Verify public installation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-public-install.yml'
+      - 'tests/public_install.py'
+      - '.agents/plugins/marketplace.json'
+      - '.claude-plugin/marketplace.json'
+      - 'install.sh'
+      - 'release.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-install-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  install:
+    name: Public routes (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the validation clients
+        run: |
+          npm install --prefix "$RUNNER_TEMP/clients" --no-audit --no-fund @openai/codex@0.163.0 @anthropic-ai/claude-code@2.1.310
+          echo "$RUNNER_TEMP/clients/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Verify anonymous npm installation
+        run: python3 tests/public_install.py npm --home "$RUNNER_TEMP/zeroclaw-public-npm"
+      - name: Verify public client marketplaces
+        run: python3 tests/public_install.py marketplaces --home "$RUNNER_TEMP/zeroclaw-public-marketplaces"
+      - name: Verify the release shell installer
+        run: python3 tests/public_install.py bootstrap --home "$RUNNER_TEMP/zeroclaw-public-bootstrap"
+      - name: Retain installation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-install-evidence-${{ matrix.runner }}
+          path: ${{ runner.temp }}/zeroclaw-public-*/evidence/*.json
+          if-no-files-found: warn
+          retention-days: 30
