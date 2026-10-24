@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.zeroclaw-labs/zeroclaw-mcp",
+  "description": "Configure and manage authorized ZeroClaw installations through a local MCP server.",
+  "repository": {
+    "url": "https://github.com/zeroclaw-labs/zeroclaw-mcp-distribution",
+    "source": "github"
+  },
+  "version": "0.1.0-alpha.3",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@zeroclaw-labs/zeroclaw-mcp",
+      "version": "0.1.0-alpha.3",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+name: Publish MCP Registry metadata
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-mcp-registry
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify the qualified package is already public
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          const release = JSON.parse(fs.readFileSync('release.json'));
+          const server = JSON.parse(fs.readFileSync('server.json'));
+          assert.equal(release.qualified, true, 'Runtime and package qualification must finish before registry publication');
+          assert.equal(release.version, server.version);
+          assert.equal(server.packages.length, 1);
+          const pkg = server.packages[0];
+          assert.equal(pkg.registryType, 'npm');
+          assert.equal(pkg.identifier, release.npm.name);
+          assert.equal(pkg.version, release.npm.version);
+          assert.ok(server.name.startsWith(`io.github.${process.env.GITHUB_REPOSITORY_OWNER.toLowerCase()}/`));
+          const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(pkg.identifier)}/${encodeURIComponent(pkg.version)}`);
+          assert.equal(response.status, 200, 'The exact npm version must be publicly available first');
+          const published = await response.json();
+          assert.equal(published.name, pkg.identifier);
+          assert.equal(published.version, pkg.version);
+          assert.equal(published.mcpName, server.name);
+          assert.equal(published.dist.integrity, release.npm.integrity);
+          console.log(`Verified ${pkg.identifier}@${pkg.version}`);
+          JS
+      - name: Fetch the pinned MCP publisher
+        run: |
+          mkdir -p "$RUNNER_TEMP/mcp-publisher"
+          curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 20 --max-time 120 --retry 2 https://github.com/modelcontextprotocol/registry/releases/download/v1.8.4/mcp-publisher_linux_amd64.tar.gz --output "$RUNNER_TEMP/mcp-publisher/publisher.tar.gz"
+          printf '%s  %s\n' '5dc2fd415369c73551259f31cd33e2aacc9e0d1021e7f08fef1492d93b781628' "$RUNNER_TEMP/mcp-publisher/publisher.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/mcp-publisher/publisher.tar.gz" -C "$RUNNER_TEMP/mcp-publisher" mcp-publisher
+      - name: Authenticate with GitHub OIDC
+        run: '"$RUNNER_TEMP/mcp-publisher/mcp-publisher" login github-oidc'
+      - name: Publish the verified registry metadata
+        run: '"$RUNNER_TEMP/mcp-publisher/mcp-publisher" publish'

@@ -1,0 +1,7 @@
+.npmrc
+.env
+.env.*
+.mcpregistry*
+*.tgz
+*.zip
+.DS_Store

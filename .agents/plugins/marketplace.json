@@ -1,0 +1,24 @@
+{
+  "metadata": {
+    "description": "Set up and manage ZeroClaw through conversation."
+  },
+  "name": "zeroclaw-labs",
+  "owner": {
+    "name": "ZeroClaw Labs"
+  },
+  "plugins": [
+    {
+      "category": "Productivity",
+      "name": "zeroclaw",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "source": {
+        "package": "@zeroclaw-labs/zeroclaw-mcp",
+        "source": "npm",
+        "version": "0.1.0-alpha.3"
+      }
+    }
+  ]
+}
