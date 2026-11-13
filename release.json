@@ -1,18 +1,18 @@
 {
   "schema": "zeroclaw-mcp-public-release/v1",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.6",
   "qualified": true,
-  "qualificationNote": "Distribution qualified: exact CI/runtime provenance, native client installation, drafts and declined permission review, ZeroClaw discovery, update preservation and offline startup. Managed-host lifecycle actions were not run for this distribution.",
-  "assemblySource": "db6ca8af7d043c5668fa2e9db9febcdcd36961af",
+  "qualificationNote": "Exact CI/runtime provenance; native Codex and Claude installation on macOS ARM64 and Linux ARM64/x86-64; SDK 1.30/2.2; repeat installation, offline startup, and alpha.5 update preservation. Official ZeroClaw v0.9.0 managed-host lifecycle qualification is retained with runtime alpha.9; publication checks used isolated client profiles.",
+  "assemblySource": "33770a4eea51cdcf6eb5a304d531c784f5b23f02",
   "npm": {
     "name": "@zeroclaw-labs/zeroclaw-mcp",
-    "version": "0.1.0-alpha.4",
-    "integrity": "sha512-eAqVYAM63QU+py+EYcnC4YuVeB0CRhPKANu5u5uKHQdTvGMAyd3Yzgb2S7hWDZqQZTKeRTEx7AN9caJTYjGxxw==",
-    "sha256": "2c5b45a1c63f0363348bf0e2923793660bc5f7bb10d4f00a6e837d7b9a2a417a"
+    "version": "0.1.0-alpha.6",
+    "integrity": "sha512-fSrZuxwle/gGAcPrd9O4xVrvM9ZH0sNtFOj5PsWuKq6ONnfVaE7RMcfSVeA5rGd1mDvGC4fkJ85MU/xEInJeDA==",
+    "sha256": "c3b5ee4c4d3eee7a3ad49295c141ff0d7f44cbc252db31649d329d7a4a5e7e91"
   },
   "pluginZip": {
-    "sha256": "3e86afc955f4456d9f192bbc6f4168083b84a41fd3759a33f0e33f856b009f16"
+    "sha256": "acb7a692cff77fb98005d0a7effeba95e53b5a0a882242c8a6197e36bd783c36"
   },
-  "runtimeVersion": "0.1.0-alpha.7",
-  "runtimeSource": "97d933850a3050534e91133f4b7388bbc553165b"
+  "runtimeVersion": "0.1.0-alpha.9",
+  "runtimeSource": "ab2023c0a9f3cf8fedc674e46b23926301ef7bc5"
 }

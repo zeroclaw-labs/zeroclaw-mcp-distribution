@@ -13,7 +13,7 @@ cleanup() { rm -f "$zeroclaw_install_dir/package.tgz"; rmdir "$zeroclaw_install_
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-printf '%s\n' 'Downloading ZeroClaw 0.1.0-alpha.4...'
-curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 20 --max-time 900 --retry 2 --output "$zeroclaw_install_dir/package.tgz" 'https://github.com/zeroclaw-labs/zeroclaw-mcp-distribution/releases/download/v0.1.0-alpha.4/zeroclaw-labs-zeroclaw-mcp-0.1.0-alpha.4.tgz'
-node -e 'const fs=require("node:fs"),c=require("node:crypto"); if(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex")!==process.argv[2]) { console.error("Package checksum mismatch; installation stopped"); process.exit(1); }' "$zeroclaw_install_dir/package.tgz" '2c5b45a1c63f0363348bf0e2923793660bc5f7bb10d4f00a6e837d7b9a2a417a'
+printf '%s\n' 'Downloading ZeroClaw 0.1.0-alpha.6...'
+curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 --connect-timeout 20 --max-time 900 --retry 2 --output "$zeroclaw_install_dir/package.tgz" 'https://github.com/zeroclaw-labs/zeroclaw-mcp-distribution/releases/download/v0.1.0-alpha.6/zeroclaw-labs-zeroclaw-mcp-0.1.0-alpha.6.tgz'
+node -e 'const fs=require("node:fs"),c=require("node:crypto"); if(c.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex")!==process.argv[2]) { console.error("Package checksum mismatch; installation stopped"); process.exit(1); }' "$zeroclaw_install_dir/package.tgz" 'c3b5ee4c4d3eee7a3ad49295c141ff0d7f44cbc252db31649d329d7a4a5e7e91'
 npm exec --yes --package="$zeroclaw_install_dir/package.tgz" -- zeroclaw-mcp install "$@"

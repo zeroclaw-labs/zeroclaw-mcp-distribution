@@ -10,9 +10,9 @@
     {
       "name": "zeroclaw",
       "source": {
-        "sha256": "3e86afc955f4456d9f192bbc6f4168083b84a41fd3759a33f0e33f856b009f16",
+        "sha256": "acb7a692cff77fb98005d0a7effeba95e53b5a0a882242c8a6197e36bd783c36",
         "source": "archive",
-        "url": "https://github.com/zeroclaw-labs/zeroclaw-mcp-distribution/releases/download/v0.1.0-alpha.4/zeroclaw-plugin-0.1.0-alpha.4.zip"
+        "url": "https://github.com/zeroclaw-labs/zeroclaw-mcp-distribution/releases/download/v0.1.0-alpha.6/zeroclaw-plugin-0.1.0-alpha.6.zip"
       }
     }
   ]
