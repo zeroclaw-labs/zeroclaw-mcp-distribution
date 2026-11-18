@@ -9,6 +9,7 @@ import tarfile
 import tempfile
 import unittest
 from unittest import mock
+import urllib.error
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -144,6 +145,55 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(ci.release_identity("v" + self.version), record)
             record["draft"] = False
             with self.assertRaisesRegex(ValueError, "tag is missing"): ci.release_identity("v" + self.version)
+
+    def test_registry_retries_reuse_only_the_matching_active_version(self):
+        server = {"$schema": "schema", "name": "io.github.zeroclaw-labs/zeroclaw-mcp", "version": self.version,
+                  "packages": [{"registryType": "npm", "identifier": ci.PACKAGE, "version": self.version}]}
+        row = {"server": {k: v for k, v in server.items() if k != "$schema"},
+               "_meta": {"io.modelcontextprotocol.registry/official": {"status": "active"}}}
+        with mock.patch.object(ci.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(row).encode())) as fetch:
+            self.assertFalse(ci.registry_status(server)["needed"])
+            self.assertIn("io.github.zeroclaw-labs%2Fzeroclaw-mcp/versions/", fetch.call_args.args[0])
+        row["server"]["packages"][0]["version"] = "0.1.0-alpha.5"
+        expected = {**server, "packages": [{"registryType": "npm", "identifier": ci.PACKAGE, "version": self.version}]}
+        with mock.patch.object(ci.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(row).encode())):
+            with self.assertRaisesRegex(ValueError, "conflicts"): ci.registry_status(expected)
+        row["server"]["packages"] = expected["packages"]
+        row["_meta"]["io.modelcontextprotocol.registry/official"]["status"] = "deleted"
+        with mock.patch.object(ci.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(row).encode())):
+            with self.assertRaisesRegex(ValueError, "not active"): ci.registry_status(expected)
+
+    def test_registry_network_errors_are_not_mistaken_for_missing_versions(self):
+        server = {"name": "io.github.zeroclaw-labs/zeroclaw-mcp", "version": self.version}
+        with mock.patch.object(ci.urllib.request, "urlopen", side_effect=urllib.error.HTTPError("url", 404, "missing", {}, None)):
+            self.assertTrue(ci.registry_status(server)["needed"])
+        with mock.patch.object(ci.urllib.request, "urlopen", side_effect=urllib.error.HTTPError("url", 503, "unavailable", {}, None)):
+            with self.assertRaises(urllib.error.HTTPError): ci.registry_status(server)
+
+    def test_catalog_retry_binds_checks_to_verified_main_snapshot_without_another_merge(self):
+        record = {**self.receipt(), "draft": False}
+        content = {"content": base64.b64encode(json.dumps(self.release).encode()).decode()}
+        with mock.patch.object(ci, "release_identity", return_value=record), \
+             mock.patch.object(ci, "registry_json", return_value={"dist": {"integrity": self.release["npm"]["integrity"]}}), \
+             mock.patch.object(ci, "gh_json", side_effect=[content, {"object": {"sha": "d" * 40}}, content]), \
+             mock.patch.object(ci, "command") as mutate:
+            result = ci.promote("v" + self.version, self.root)
+            self.assertEqual(result, {"catalogs_already_current": True, "catalog_commit": "d" * 40})
+            mutate.assert_not_called()
+
+    def test_catalog_checks_use_the_actual_merge_commit(self):
+        record = {**self.receipt(), "draft": False}
+        content = {"content": base64.b64encode(json.dumps(self.release).encode()).decode()}
+        old = {"content": base64.b64encode(b'{"version":"0.1.0-alpha.5"}').decode()}
+        pr = {"number": 1, "headRefOid": "c" * 40, "headRefName": "release/alpha6", "isDraft": True}
+        with mock.patch.object(ci, "release_identity", return_value=record), \
+             mock.patch.object(ci, "registry_json", return_value={"dist": {"integrity": self.release["npm"]["integrity"]}}), \
+             mock.patch.object(ci, "gh_json", side_effect=[content, {"object": {"sha": "d" * 40}}, old, [pr],
+                                                         {"state": "MERGED", "mergeCommit": {"oid": "e" * 40}}, content]), \
+             mock.patch.object(ci, "command"):
+            result = ci.promote("v" + self.version, self.root)
+            self.assertEqual(result["catalog_commit"], "e" * 40)
+            self.assertTrue(result["merged"])
 
 
 if __name__ == "__main__": unittest.main()

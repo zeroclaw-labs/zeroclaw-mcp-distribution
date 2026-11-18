@@ -12,8 +12,11 @@ published npm bytes before advancing catalogs. Already published matching versio
 are reused. Changed assets, conflicting npm integrity, unqualified metadata and
 backwards tag updates fail rather than overwrite an existing release.
 
-The final job promotes the prepared catalog PR through the existing merge rules,
-then dispatches `verify-public-install.yml` and `publish-registry.yml`. A merge
+The catalog job promotes the prepared PR through the existing merge rules,
+then the parent workflow waits for `verify-public-install.yml` and
+`publish-registry.yml` as reusable workflows at that exact merged commit. Registry
+retries reuse a matching active version; conflicting or retired entries are not
+overwritten or reactivated. A merge
 blocked by branch protection remains reviewable and can be retried with the same
 tag. Never use an admin bypass merely to finish publication.
 

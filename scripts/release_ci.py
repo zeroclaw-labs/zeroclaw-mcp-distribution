@@ -13,8 +13,10 @@ import re
 import stat
 import subprocess
 import tarfile
+import time
 import urllib.error
 import urllib.request
+from urllib.parse import quote
 import zipfile
 
 REPO = "zeroclaw-labs/zeroclaw-mcp-distribution"
@@ -229,6 +231,40 @@ def registry_json(suffix=""):
         raise
 
 
+def contains_metadata(actual, expected):
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and all(k in actual and contains_metadata(actual[k], v)
+                                              for k, v in expected.items() if k != "$schema")
+    if isinstance(expected, list):
+        return isinstance(actual, list) and len(actual) == len(expected) and all(
+            contains_metadata(a, e) for a, e in zip(actual, expected))
+    return actual == expected
+
+
+def registry_status(server, require_published=False):
+    require(server.get("name") == "io.github.zeroclaw-labs/zeroclaw-mcp", "Unexpected MCP Registry namespace")
+    version_key(server["version"])
+    url = ("https://registry.modelcontextprotocol.io/v0.1/servers/" + quote(server["name"], safe="")
+           + "/versions/" + quote(server["version"], safe=""))
+    for attempt in range(20 if require_published else 1):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                row = json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+            if not require_published:
+                return {"needed": True, "version": server["version"]}
+            if attempt < 19:
+                time.sleep(2)
+                continue
+            raise ValueError("Published MCP Registry version is not visible yet") from error
+        require(contains_metadata(row.get("server"), server), "Existing registry metadata conflicts with this release")
+        require(row.get("_meta", {}).get("io.modelcontextprotocol.registry/official", {}).get("status") == "active",
+                "Existing registry version is not active; do not republish or reactivate it implicitly")
+        return {"needed": False, "version": server["version"], "matching_active_version": True}
+
+
 def verify_registry(release, root):
     metadata = registry_json("/" + release["version"])
     require(metadata is not None and metadata.get("name") == PACKAGE
@@ -290,13 +326,12 @@ def promote(tag, root):
     validate_receipt(record, json.loads((root / "github-release.json").read_text()), release["version"])
     metadata = registry_json("/" + release["version"])
     require(metadata and metadata["dist"]["integrity"] == release["npm"]["integrity"], "npm must be public before catalogs")
-    current = gh_json("api", f"repos/{REPO}/contents/release.json?ref=main")
+    current_ref = gh_json("api", f"repos/{REPO}/git/ref/heads/main")["object"]["sha"]
+    current = gh_json("api", f"repos/{REPO}/contents/release.json?ref={current_ref}")
     current = json.loads(base64.b64decode(current["content"]))
     require(version_key(current["version"]) <= version_key(release["version"]), "Refusing catalog downgrade")
     if current == release:
-        command(["gh", "workflow", "run", "verify-public-install.yml", "--repo", REPO, "--ref", "main"])
-        command(["gh", "workflow", "run", "publish-registry.yml", "--repo", REPO, "--ref", "main"])
-        return {"catalogs_already_current": True}
+        return {"catalogs_already_current": True, "catalog_commit": current_ref}
     prs = gh_json("pr", "list", "--repo", REPO, "--state", "open", "--base", "main",
                   "--json", "number,headRefOid,headRefName,isDraft")
     matches = [p for p in prs if p["headRefOid"] == record["target_commitish"]]
@@ -306,25 +341,36 @@ def promote(tag, root):
         command(["gh", "pr", "ready", str(pr["number"]), "--repo", REPO])
     command(["gh", "pr", "merge", str(pr["number"]), "--repo", REPO, "--squash",
              "--match-head-commit", pr["headRefOid"]])
-    result = gh_json("pr", "view", str(pr["number"]), "--repo", REPO, "--json", "state")
+    result = gh_json("pr", "view", str(pr["number"]), "--repo", REPO, "--json", "state,mergeCommit")
     require(result["state"] == "MERGED", "Catalog PR is still awaiting repository merge requirements; rerun after they pass")
-    current = gh_json("api", f"repos/{REPO}/contents/release.json?ref=main")
+    merged = result["mergeCommit"]["oid"]
+    require(re.fullmatch(r"[a-f0-9]{40}", merged), "Invalid merged catalog commit")
+    current = gh_json("api", f"repos/{REPO}/contents/release.json?ref={merged}")
     require(json.loads(base64.b64decode(current["content"])) == release, "Merged catalog metadata differs from this release")
-    command(["gh", "workflow", "run", "verify-public-install.yml", "--repo", REPO, "--ref", "main"])
-    command(["gh", "workflow", "run", "publish-registry.yml", "--repo", REPO, "--ref", "main"])
-    return {"catalog_pr": pr["number"], "merged": True}
+    return {"catalog_pr": pr["number"], "merged": True, "catalog_commit": merged}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("prepare", "validate", "publish", "promote"))
-    parser.add_argument("--tag", required=True)
+    parser.add_argument("action", choices=("prepare", "validate", "publish", "promote", "registry-status"))
+    parser.add_argument("--tag", default="")
+    parser.add_argument("--server-json", type=Path, default=Path("server.json"))
+    parser.add_argument("--require-published", action="store_true")
     parser.add_argument("--directory", type=Path, default=Path("release-input"))
     args = parser.parse_args()
-    if args.action == "prepare":
+    if args.action == "registry-status":
+        result = registry_status(json.loads(args.server_json.read_text()), args.require_published)
+        if path := os.environ.get("GITHUB_OUTPUT"):
+            with open(path, "a") as stream:
+                stream.write(f"needed={str(result['needed']).lower()}\n")
+    elif args.action == "prepare":
         result = prepare(args.tag, args.directory)
     elif args.action == "promote":
         result = promote(args.tag, args.directory)
+        if path := os.environ.get("GITHUB_OUTPUT"):
+            require(re.fullmatch(r"[a-f0-9]{40}", result["catalog_commit"]), "Invalid catalog source")
+            with open(path, "a") as stream:
+                stream.write(f"catalog_commit={result['catalog_commit']}\n")
     else:
         release = validate_metadata(json.loads((args.directory / "release.json").read_text()), args.tag)
         result = publish(args.directory) if args.action == "publish" else {"validated_files": len(validate_artifacts(args.directory, release))}
