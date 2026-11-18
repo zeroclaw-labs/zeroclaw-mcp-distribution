@@ -2,6 +2,12 @@ name: Publish MCP Registry metadata
 
 on:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_ref:
+        description: Exact merged catalog commit from the publisher
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -18,10 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.release_ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Verify the qualified package is already public
         run: |
           node --input-type=module <<'JS'
@@ -46,13 +56,21 @@ jobs:
           assert.equal(published.dist.integrity, release.npm.integrity);
           console.log(`Verified ${pkg.identifier}@${pkg.version}`);
           JS
+      - name: Reuse an already published matching registry version
+        id: registry
+        run: python3 scripts/release_ci.py registry-status
       - name: Fetch the pinned MCP publisher
+        if: steps.registry.outputs.needed == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/mcp-publisher"
           curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 20 --max-time 120 --retry 2 https://github.com/modelcontextprotocol/registry/releases/download/v1.8.4/mcp-publisher_linux_amd64.tar.gz --output "$RUNNER_TEMP/mcp-publisher/publisher.tar.gz"
           printf '%s  %s\n' '5dc2fd415369c73551259f31cd33e2aacc9e0d1021e7f08fef1492d93b781628' "$RUNNER_TEMP/mcp-publisher/publisher.tar.gz" | sha256sum --check --strict
           tar -xzf "$RUNNER_TEMP/mcp-publisher/publisher.tar.gz" -C "$RUNNER_TEMP/mcp-publisher" mcp-publisher
       - name: Authenticate with GitHub OIDC
+        if: steps.registry.outputs.needed == 'true'
         run: '"$RUNNER_TEMP/mcp-publisher/mcp-publisher" login github-oidc'
       - name: Publish the verified registry metadata
+        if: steps.registry.outputs.needed == 'true'
         run: '"$RUNNER_TEMP/mcp-publisher/mcp-publisher" publish'
+      - name: Verify the exact active registry version
+        run: python3 scripts/release_ci.py registry-status --require-published

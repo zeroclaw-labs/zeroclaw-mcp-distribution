@@ -1,0 +1,139 @@
+name: Publish qualified MCP release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact prepared MCP release tag, for example v0.1.0-alpha.6
+        required: true
+        type: string
+      dry_run:
+        description: Validate assets without publishing or changing catalogs
+        type: boolean
+        default: true
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-mcp-publication
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # GitHub exposes unpublished drafts only to principals with push access.
+    # This job never executes release contents and has no npm OIDC permission.
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Select exact tag
+        id: tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import os,re
+          tag=os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-alpha\.(0|[1-9][0-9]*))?',tag)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out: out.write(f'tag={tag}\n')
+          PY
+      - name: Verify source metadata and every release byte
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: python3 scripts/release_ci.py prepare --tag "$RELEASE_TAG" --directory "$RUNNER_TEMP/release-input"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-public-release
+          path: ${{ runner.temp }}/release-input/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: verify
+    if: github.event_name == 'release' || inputs.dry_run == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install npm with OIDC dist-tag support
+        run: npm install --global npm@11.21.0 --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-public-release
+          path: ${{ runner.temp }}/release-input
+      - name: Publish exact bytes with trusted publishing and verify public download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+        run: python3 scripts/release_ci.py publish --tag "$RELEASE_TAG" --directory "$RUNNER_TEMP/release-input"
+
+  catalogs:
+    needs: [verify, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      commit: ${{ steps.promote.outputs.catalog_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-public-release
+          path: ${{ runner.temp }}/release-input
+      - name: Promote catalogs through their prepared PR and verify public routes
+        id: promote
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.verify.outputs.tag }}
+        run: python3 scripts/release_ci.py promote --tag "$RELEASE_TAG" --directory "$RUNNER_TEMP/release-input"
+
+  public-installation:
+    needs: catalogs
+    uses: ./.github/workflows/verify-public-install.yml
+    with:
+      release_ref: ${{ needs.catalogs.outputs.commit }}
+    permissions:
+      contents: read
+
+  registry:
+    needs: [catalogs, public-installation]
+    uses: ./.github/workflows/publish-registry.yml
+    with:
+      release_ref: ${{ needs.catalogs.outputs.commit }}
+    permissions:
+      contents: read
+      id-token: write
