@@ -243,17 +243,20 @@ def verify_registry(release, root):
     return metadata
 
 
+def validate_receipt(record, receipt, version):
+    assets = {a["name"]: a for a in record["assets"]}
+    require(record["id"] == receipt["id"] and record["target_commitish"] == receipt["source"]
+            and set(receipt["assets"]) == set(artifact_names(version))
+            and all({k: assets.get(n, {}).get(k) for k in ("id", "digest", "size")} == pin
+                    for n, pin in receipt["assets"].items()), "GitHub release changed after verification")
+
+
 def publish(root):
     release = json.loads((root / "release.json").read_text())
     validate_metadata(release, "v" + release["version"])
     validate_artifacts(root, release)
-    record = release_identity("v" + release["version"])
     receipt = json.loads((root / "github-release.json").read_text())
-    assets = {a["name"]: a for a in record["assets"]}
-    require(record["id"] == receipt["id"] and record["target_commitish"] == receipt["source"]
-            and set(receipt["assets"]) == set(artifact_names(release["version"]))
-            and all({k: assets.get(n, {}).get(k) for k in ("id", "digest", "size")} == pin
-                    for n, pin in receipt["assets"].items()), "GitHub release changed after verification")
+    validate_receipt(release_identity("v" + release["version"]), receipt, release["version"])
     metadata = registry_json() or {}
     for tag in ("alpha", "latest"):
         current = metadata.get("dist-tags", {}).get(tag)
@@ -273,6 +276,7 @@ def publish(root):
             command(["npm", "dist-tag", "add", f"{PACKAGE}@{release['version']}", tag])
     tags = registry_json()["dist-tags"]
     require(all(tags.get(t) == release["version"] for t in ("latest", "alpha")), "npm tag update did not settle")
+    validate_receipt(release_identity("v" + release["version"]), receipt, release["version"])
     command(["gh", "release", "edit", "v" + release["version"], "--repo", REPO, "--draft=false"])
     return {"published": True, "version": release["version"], "sha256": release["npm"]["sha256"]}
 
@@ -291,7 +295,8 @@ def promote(tag):
         command(["gh", "workflow", "run", "verify-public-install.yml", "--repo", REPO, "--ref", "main"])
         command(["gh", "workflow", "run", "publish-registry.yml", "--repo", REPO, "--ref", "main"])
         return {"catalogs_already_current": True}
-    prs = gh_json("pr", "list", "--repo", REPO, "--state", "open", "--json", "number,headRefOid,headRefName,isDraft")
+    prs = gh_json("pr", "list", "--repo", REPO, "--state", "open", "--base", "main",
+                  "--json", "number,headRefOid,headRefName,isDraft")
     matches = [p for p in prs if p["headRefOid"] == record["target_commitish"]]
     require(len(matches) == 1, "Expected one catalog PR at the exact release commit")
     pr = matches[0]
@@ -301,6 +306,8 @@ def promote(tag):
              "--match-head-commit", pr["headRefOid"]])
     result = gh_json("pr", "view", str(pr["number"]), "--repo", REPO, "--json", "state")
     require(result["state"] == "MERGED", "Catalog PR is still awaiting repository merge requirements; rerun after they pass")
+    current = gh_json("api", f"repos/{REPO}/contents/release.json?ref=main")
+    require(json.loads(base64.b64decode(current["content"])) == release, "Merged catalog metadata differs from this release")
     command(["gh", "workflow", "run", "verify-public-install.yml", "--repo", REPO, "--ref", "main"])
     command(["gh", "workflow", "run", "publish-registry.yml", "--repo", REPO, "--ref", "main"])
     return {"catalog_pr": pr["number"], "merged": True}
