@@ -281,11 +281,13 @@ def publish(root):
     return {"published": True, "version": release["version"], "sha256": release["npm"]["sha256"]}
 
 
-def promote(tag):
+def promote(tag, root):
     record = release_identity(tag)
     require(not record["draft"], "GitHub release must be public before catalog promotion")
     content = gh_json("api", f"repos/{REPO}/contents/release.json?ref={tag}")
     release = validate_metadata(json.loads(base64.b64decode(content["content"])), tag)
+    require(json.loads((root / "release.json").read_text()) == release, "Catalog release differs from the verified input")
+    validate_receipt(record, json.loads((root / "github-release.json").read_text()), release["version"])
     metadata = registry_json("/" + release["version"])
     require(metadata and metadata["dist"]["integrity"] == release["npm"]["integrity"], "npm must be public before catalogs")
     current = gh_json("api", f"repos/{REPO}/contents/release.json?ref=main")
@@ -322,7 +324,7 @@ def main():
     if args.action == "prepare":
         result = prepare(args.tag, args.directory)
     elif args.action == "promote":
-        result = promote(args.tag)
+        result = promote(args.tag, args.directory)
     else:
         release = validate_metadata(json.loads((args.directory / "release.json").read_text()), args.tag)
         result = publish(args.directory) if args.action == "publish" else {"validated_files": len(validate_artifacts(args.directory, release))}
